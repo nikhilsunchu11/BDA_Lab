@@ -1,0 +1,361 @@
+
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=0.78in,headheight=14pt,footskip=24pt]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{xcolor,listings,graphicx,float,fancyhdr,booktabs,caption,titlesec,microtype,array}
+\definecolor{codebg}{RGB}{247,247,247}
+\definecolor{codegreen}{RGB}{0,110,55}
+\definecolor{codeblue}{RGB}{30,70,160}
+\definecolor{codepurple}{RGB}{135,40,140}
+\lstdefinestyle{terminalstyle}{
+ basicstyle=\ttfamily\scriptsize, backgroundcolor=\color{codebg},
+ breaklines=true, frame=single, rulecolor=\color{black!18},
+ columns=fullflexible, keepspaces=true, showstringspaces=false
+}
+\lstdefinestyle{pythonstyle}{
+ language=Python, basicstyle=\ttfamily\scriptsize,
+ backgroundcolor=\color{codebg}, keywordstyle=\color{codeblue}\bfseries,
+ commentstyle=\color{codegreen}\itshape, stringstyle=\color{codepurple},
+ breaklines=true, frame=single, rulecolor=\color{black!18},
+ numbers=left, numberstyle=\tiny\color{gray}, numbersep=6pt,
+ columns=fullflexible, showstringspaces=false
+}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small Big Data Analysis Lab}
+\rfoot{\small Experiment 10}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\titleformat{\section}{\large\bfseries}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.7em}{}
+\captionsetup{font=small,labelfont=bf}
+\setlength{\intextsep}{5pt}
+\setlength{\textfloatsep}{6pt}
+\setlength{\abovecaptionskip}{3pt}
+\setlength{\belowcaptionskip}{0pt}
+\begin{document}
+\noindent
+\textbf{Name:} Nikhil Sunchu\\
+\textbf{Class:} D20A-31
+
+\vspace{0.5em}
+\begin{center}
+{\Large\bfseries Experiment 10: E-Commerce Intelligence Dashboard}\\
+\textbf{Analytics using Hive, Impala, PostgreSQL, and Streamlit}
+\end{center}
+
+\section{Implementation Steps and Results}
+
+\subsection{1. Store the Dataset in HDFS}
+The October 2019 e-commerce events CSV file (\texttt{2019-Oct.csv}, approximately 3.13 GB) was copied into the Cloudera QuickStart container and uploaded to HDFS. The file was stored in \texttt{/user/cloudera/exp10}.
+
+\begin{lstlisting}[style=terminalstyle]
+hdfs dfs -mkdir -p /user/cloudera/exp10
+hdfs dfs -put /tmp/2019-Oct.csv /user/cloudera/exp10/
+hdfs dfs -ls -h /user/cloudera/exp10
+\end{lstlisting}
+
+\subsection{2. Create the Hive External Table}
+An external Hive table was created over the CSV file. The schema contains nine columns. The table uses comma-separated fields and skips the header row.
+
+\begin{lstlisting}[style=terminalstyle]
+CREATE EXTERNAL TABLE IF NOT EXISTS ecommerce_events (
+    event_time STRING,
+    event_type STRING,
+    product_id BIGINT,
+    category_id BIGINT,
+    category_code STRING,
+    brand STRING,
+    price DOUBLE,
+    user_id BIGINT,
+    user_session STRING
+)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+STORED AS TEXTFILE
+LOCATION '/user/cloudera/exp10'
+TBLPROPERTIES ("skip.header.line.count"="1");
+\end{lstlisting}
+
+The table was moved into \texttt{exp10\_db} and Impala metadata was refreshed.
+
+\begin{lstlisting}[style=terminalstyle]
+ALTER TABLE default.ecommerce_events
+RENAME TO exp10_db.ecommerce_events;
+
+INVALIDATE METADATA exp10_db.ecommerce_events;
+SHOW TABLES IN exp10_db;
+\end{lstlisting}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\linewidth]{image(20261104-051210).png}
+\caption{The \texttt{ecommerce\_events} table is visible in \texttt{exp10\_db} in Impala.}
+\end{figure}
+
+\subsection{3. Create a Clean Impala View}
+Impala initially counted the CSV header as one additional record. A view was created to retain only the three valid event types: \texttt{view}, \texttt{cart}, and \texttt{purchase}.
+
+\begin{lstlisting}[style=terminalstyle]
+CREATE VIEW exp10_db.ecommerce_events_clean AS
+SELECT *
+FROM exp10_db.ecommerce_events
+WHERE event_type IN ('view', 'cart', 'purchase');
+\end{lstlisting}
+
+The cleaned record count was checked using:
+
+\begin{lstlisting}[style=terminalstyle]
+SELECT COUNT(*) AS total_records
+FROM exp10_db.ecommerce_events_clean;
+\end{lstlisting}
+
+The view returned 23,445,441 records, matching the Hive count.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\linewidth]{image(20261104-051931).png}
+\caption{Creation of the clean view and event distribution without the CSV header row.}
+\end{figure}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.68\linewidth]{image(20261104-052211).png}
+\caption{Cleaned Impala record count: 23,445,441.}
+\end{figure}
+
+\subsection{4. Perform Analytics Using Impala}
+The cleaned view was used for the following analytical queries.
+
+\textbf{Event distribution:}
+\begin{lstlisting}[style=terminalstyle]
+SELECT event_type, COUNT(*) AS total_events
+FROM exp10_db.ecommerce_events_clean
+GROUP BY event_type
+ORDER BY total_events DESC;
+\end{lstlisting}
+The results were 22,541,429 views, 487,353 cart events, and 416,659 purchases.
+
+\textbf{Top 10 categories by views:}
+\begin{lstlisting}[style=terminalstyle]
+SELECT category_code, COUNT(*) AS total_views
+FROM exp10_db.ecommerce_events_clean
+WHERE event_type = 'view'
+  AND category_code IS NOT NULL
+  AND TRIM(category_code) != ''
+GROUP BY category_code
+ORDER BY total_views DESC
+LIMIT 10;
+\end{lstlisting}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\linewidth]{image(20261104-052317).png}
+\caption{Top 10 product categories by view events.}
+\end{figure}
+
+\textbf{Daily purchase trends:}
+\begin{lstlisting}[style=terminalstyle]
+SELECT SUBSTR(event_time, 1, 10) AS purchase_date,
+       COUNT(*) AS purchase_events,
+       ROUND(SUM(price), 2) AS daily_purchase_value
+FROM exp10_db.ecommerce_events_clean
+WHERE event_type = 'purchase'
+GROUP BY SUBSTR(event_time, 1, 10)
+ORDER BY purchase_date;
+\end{lstlisting}
+The query returned 18 dates from October 1 to October 18, 2019. October 18 contained 1,084 purchase events and is treated as a partial day.
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.78\linewidth]{image(20261104-052532).png}
+\caption{Daily purchase-event counts and recorded purchase values.}
+\end{figure}
+
+\subsection{5. Create PostgreSQL Tables}
+A PostgreSQL database named \texttt{ecommerce\_dashboard} was used to store the aggregated analytics. Three tables were created.
+
+\begin{lstlisting}[style=terminalstyle]
+CREATE TABLE event_summary (
+    event_type VARCHAR(50) PRIMARY KEY,
+    total_events BIGINT NOT NULL
+);
+
+CREATE TABLE daily_purchase_trends (
+    purchase_date DATE PRIMARY KEY,
+    purchase_events BIGINT NOT NULL,
+    daily_purchase_value NUMERIC(15, 2)
+);
+
+CREATE TABLE category_performance (
+    category_code VARCHAR(255) PRIMARY KEY,
+    total_views BIGINT DEFAULT 0,
+    purchase_events BIGINT DEFAULT 0,
+    total_purchase_value NUMERIC(15, 2) DEFAULT 0
+);
+\end{lstlisting}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\linewidth]{image(20261104-053116).png}
+\caption{The three analytics tables created in PostgreSQL.}
+\end{figure}
+
+\subsection{6. Export Analytics from Impala to PostgreSQL}
+The Python script \texttt{scripts/export\_analytics.py} connects to Impala using ImPyla on port 21050, extracts aggregated data into Pandas DataFrames, and inserts the results into PostgreSQL using SQLAlchemy.
+
+\begin{lstlisting}[style=pythonstyle]
+from impala.dbapi import connect
+from sqlalchemy import create_engine, text
+from dotenv import load_dotenv
+import pandas as pd
+import os
+
+load_dotenv()
+
+impala_conn = connect(
+    host="172.22.0.2", port=21050,
+    database="exp10_db", auth_mechanism="NOSASL"
+)
+cursor = impala_conn.cursor()
+
+DATABASE_URL = (
+    f"postgresql+psycopg2://{os.getenv('PGUSER')}:"
+    f"{os.getenv('PGPASSWORD')}@{os.getenv('PGHOST')}:"
+    f"{os.getenv('PGPORT')}/{os.getenv('PGDATABASE')}"
+)
+pg_engine = create_engine(DATABASE_URL)
+
+def fetch_dataframe(query):
+    cursor.execute(query)
+    rows = cursor.fetchall()
+    columns = [col[0] for col in cursor.description]
+    return pd.DataFrame(rows, columns=columns)
+
+event_df = fetch_dataframe("""
+    SELECT event_type, COUNT(*) AS total_events
+    FROM ecommerce_events_clean
+    GROUP BY event_type
+""")
+
+daily_df = fetch_dataframe("""
+    SELECT SUBSTR(event_time, 1, 10) AS purchase_date,
+           COUNT(*) AS purchase_events,
+           ROUND(SUM(price), 2) AS daily_purchase_value
+    FROM ecommerce_events_clean
+    WHERE event_type = 'purchase'
+    GROUP BY SUBSTR(event_time, 1, 10)
+    ORDER BY purchase_date
+""")
+daily_df["purchase_date"] = pd.to_datetime(
+    daily_df["purchase_date"]
+).dt.date
+
+category_df = fetch_dataframe("""
+    SELECT category_code,
+           SUM(CASE WHEN event_type = 'view' THEN 1 ELSE 0 END)
+               AS total_views,
+           SUM(CASE WHEN event_type = 'purchase' THEN 1 ELSE 0 END)
+               AS purchase_events,
+           ROUND(SUM(CASE WHEN event_type = 'purchase'
+                          THEN price ELSE 0 END), 2)
+               AS total_purchase_value
+    FROM ecommerce_events_clean
+    WHERE category_code IS NOT NULL
+      AND TRIM(category_code) != ''
+    GROUP BY category_code
+""")
+
+with pg_engine.begin() as connection:
+    connection.execute(text("""
+        TRUNCATE TABLE event_summary,
+        daily_purchase_trends, category_performance
+    """))
+    event_df.to_sql("event_summary", connection,
+                    if_exists="append", index=False)
+    daily_df.to_sql("daily_purchase_trends", connection,
+                    if_exists="append", index=False)
+    category_df.to_sql("category_performance", connection,
+                       if_exists="append", index=False)
+
+cursor.close()
+impala_conn.close()
+pg_engine.dispose()
+\end{lstlisting}
+
+The script exported 3 event-summary rows, 18 daily-trend rows, and 125 category rows.
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.78\linewidth]{image(20261104-064115).png}
+\caption{PostgreSQL event-summary records.}
+\end{figure}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.78\linewidth]{image(20261104-064133).png}
+\caption{PostgreSQL daily purchase-trend records.}
+\end{figure}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.94\linewidth]{image(20261104-064153).png}
+\caption{Category-performance records stored in PostgreSQL.}
+\end{figure}
+
+\subsection{7. Build and Run the Streamlit Dashboard}
+The Streamlit application in \texttt{dashboard/app.py} reads the three PostgreSQL tables and displays key performance indicators and Plotly charts. The dashboard was launched using:
+
+\begin{lstlisting}[style=terminalstyle]
+uv run streamlit run dashboard/app.py
+\end{lstlisting}
+
+The dashboard displays total events, product views, add-to-cart events, purchases, event distribution, daily purchase trends, daily recorded purchase value, and the top categories by views and purchases.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\linewidth]{image(20261104-070129).png}
+\caption{Dashboard KPIs, event distribution, daily purchase events, and data-coverage notice.}
+\end{figure}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\linewidth]{image(20261104-070150).png}
+\caption{Daily recorded purchase value and top 10 categories by views.}
+\end{figure}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\linewidth]{image(20261104-070216).png}
+\caption{Top 10 categories by purchase events and category analytics table.}
+\end{figure}
+
+\subsection{8. Verify the Final PostgreSQL Data}
+The row counts in all three PostgreSQL tables were checked after the export.
+
+\begin{lstlisting}[style=terminalstyle]
+SELECT
+    (SELECT COUNT(*) FROM event_summary) AS event_rows,
+    (SELECT COUNT(*) FROM daily_purchase_trends) AS daily_rows,
+    (SELECT COUNT(*) FROM category_performance) AS category_rows;
+\end{lstlisting}
+
+The final output was: \texttt{event\_rows = 3}, \texttt{daily\_rows = 18}, and \texttt{category\_rows = 125}. All three table counts matched the export summary.
+
+\section{Observation}
+\begin{center}
+\begin{tabular}{>{\raggedright\arraybackslash}p{0.58\linewidth}p{0.32\linewidth}}
+\toprule
+\textbf{Operation} & \textbf{Observation} \\
+\midrule
+HDFS dataset & 2019-Oct.csv uploaded (approximately 3.13 GB) \\
+Hive external table & Created in \texttt{exp10\_db} \\
+Cleaned Impala view & 23,445,441 records \\
+Event distribution & 3 event types returned \\
+Daily purchase trends & 18 dates returned \\
+Category analytics & 125 categories exported \\
+PostgreSQL export & 3 event, 18 daily, 125 category rows \\
+Streamlit dashboard & KPI cards and interactive charts displayed \\
+Final validation & All PostgreSQL row counts matched \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Conclusion}
+The experiment successfully implemented an e-commerce analytics workflow using HDFS, Hive, Impala, Python, PostgreSQL, and Streamlit. The available dataset contained 23,445,441 valid event records and covered October 1--18, 2019. Aggregated event, daily purchase, and category analytics were transferred into PostgreSQL and visualised through the Streamlit dashboard. Final table counts were verified as 3, 18, and 125 rows respectively.
+
+\end{document}

@@ -1,0 +1,341 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=0.78in,headheight=14pt,footskip=24pt]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{titlesec}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{enumitem}
+
+\definecolor{codebg}{RGB}{247,247,247}
+\definecolor{codegreen}{RGB}{0,110,55}
+\definecolor{codeblue}{RGB}{30,70,160}
+\definecolor{codepurple}{RGB}{135,40,140}
+\definecolor{codered}{RGB}{160,35,35}
+
+\lstdefinestyle{javastyle}{
+  language=Java,
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{codeblue}\bfseries,
+  commentstyle=\color{codegreen}\itshape,
+  stringstyle=\color{codepurple},
+  numberstyle=\tiny\color{gray},
+  numbers=left,
+  numbersep=7pt,
+  breaklines=true,
+  breakatwhitespace=false,
+  showstringspaces=false,
+  tabsize=4,
+  frame=single,
+  rulecolor=\color{black!18},
+  columns=fullflexible,
+  keepspaces=true
+}
+\lstdefinestyle{terminalstyle}{
+  basicstyle=\ttfamily\scriptsize,
+  backgroundcolor=\color{codebg},
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{black!18},
+  columns=fullflexible,
+  keepspaces=true
+}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{}\rhead{\small Big Data Analysis Lab}
+\rfoot{\small Experiment 7}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\titleformat{\section}{\large\bfseries}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.7em}{}
+\captionsetup{font=small,labelfont=bf}
+\begin{document}
+
+\noindent
+\textbf{Name:} Nikhil Sunchu\\
+\textbf{Class:} D20A-31
+
+\vspace{0.5em}
+\begin{center}
+{\Large\bfseries Experiment 7: Matrix Multiplication using 1-Step MapReduce}\\
+\textbf{Implementing Matrix Multiplication using Hadoop MapReduce in Java}
+\end{center}
+
+\section*{Aim}
+To implement matrix multiplication using a single Hadoop MapReduce job, execute the Java program on input data stored in HDFS, and verify the resulting product matrix.
+
+\section{Theory}
+Hadoop MapReduce is a programming model used to process datasets through Mapper and Reducer phases. In matrix multiplication, each element of the result matrix is calculated by multiplying elements from a row of matrix $A$ with corresponding elements from a column of matrix $B$, and summing the products.
+
+For matrices $A$ and $B$, the result is $C=A\times B$, where each output element is:
+\[
+C_{ij}=\sum_k A_{ik}B_{kj}.
+\]
+
+\textbf{Mapper:} The \texttt{MatrixMapper} reads each matrix element in the format \texttt{MatrixName,row,column,value}. For an element of matrix $A$, it emits a key for each output cell in the corresponding row. For an element of matrix $B$, it emits a key for each output cell in the corresponding column. The intermediate key identifies an output cell $(i,j)$.
+
+\textbf{Shuffle and Sort:} Hadoop groups all intermediate values with the same output-cell key and sends them to the same reducer.
+
+\textbf{Reducer:} The \texttt{MatrixReducer} separates values originating from matrices $A$ and $B$, matches their common index $k$, multiplies matching values, and sums the products to calculate each $C_{ij}$.
+
+\textbf{Job Configuration:} The driver configures the Mapper and Reducer, specifies the key/value types, and sets the HDFS input and output paths. Since the Mapper and Reducer complete the computation in one job, this is a 1-step MapReduce implementation.
+
+\subsection{Input Dataset}
+Two $2\times2$ matrices were provided as individual records in \texttt{matrix\_input.txt}. Each line contains the matrix name, row index, column index, and element value.
+
+\begin{lstlisting}[style=terminalstyle]
+A,0,0,1
+A,0,1,2
+A,1,0,3
+A,1,1,4
+B,0,0,5
+B,0,1,6
+B,1,0,7
+B,1,1,8
+\end{lstlisting}
+
+The input represents:
+\[
+A=\begin{bmatrix}1&2\\3&4\end{bmatrix},
+\qquad
+B=\begin{bmatrix}5&6\\7&8\end{bmatrix}.
+\]
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{input.png}
+\caption{Input file and Java source file in the experiment directory.}
+\end{figure}
+
+\section{Experimental Procedure and Results}
+
+\subsection{1. Matrix Multiplication Program}
+The program was implemented in Java using the \texttt{MatrixMapper} and \texttt{MatrixReducer} classes. The mapper emits intermediate values for each output cell, and the reducer computes the dot product for that cell.
+
+\begin{lstlisting}[style=javastyle]
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+
+public class MatrixMultiplication {
+
+    public static class MatrixMapper
+            extends Mapper<Object, Text, Text, Text> {
+
+        private Text outputKey = new Text();
+        private Text outputValue = new Text();
+
+        public void map(Object key, Text value, Context context)
+                throws IOException, InterruptedException {
+
+            String[] parts = value.toString().split(",");
+            String matrix = parts[0];
+            int row = Integer.parseInt(parts[1]);
+            int col = Integer.parseInt(parts[2]);
+            int val = Integer.parseInt(parts[3]);
+            int n = 2;
+
+            if (matrix.equals("A")) {
+                for (int j = 0; j < n; j++) {
+                    outputKey.set(row + "," + j);
+                    outputValue.set("A," + col + "," + val);
+                    context.write(outputKey, outputValue);
+                }
+            } else if (matrix.equals("B")) {
+                for (int i = 0; i < n; i++) {
+                    outputKey.set(i + "," + col);
+                    outputValue.set("B," + row + "," + val);
+                    context.write(outputKey, outputValue);
+                }
+            }
+        }
+    }
+
+    public static class MatrixReducer
+            extends Reducer<Text, Text, Text, IntWritable> {
+
+        public void reduce(Text key, Iterable<Text> values, Context context)
+                throws IOException, InterruptedException {
+
+            List<int[]> A = new ArrayList<>();
+            List<int[]> B = new ArrayList<>();
+
+            for (Text value : values) {
+                String[] parts = value.toString().split(",");
+                String matrix = parts[0];
+                int index = Integer.parseInt(parts[1]);
+                int val = Integer.parseInt(parts[2]);
+
+                if (matrix.equals("A")) {
+                    A.add(new int[]{index, val});
+                } else {
+                    B.add(new int[]{index, val});
+                }
+            }
+
+            int sum = 0;
+            for (int[] a : A) {
+                for (int[] b : B) {
+                    if (a[0] == b[0]) {
+                        sum += a[1] * b[1];
+                    }
+                }
+            }
+            context.write(key, new IntWritable(sum));
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        Configuration conf = new Configuration();
+        Job job = Job.getInstance(conf, "Matrix Multiplication");
+        job.setJarByClass(MatrixMultiplication.class);
+        job.setMapperClass(MatrixMapper.class);
+        job.setReducerClass(MatrixReducer.class);
+        job.setMapOutputKeyClass(Text.class);
+        job.setMapOutputValueClass(Text.class);
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(IntWritable.class);
+        FileInputFormat.addInputPath(job, new Path(args[0]));
+        FileOutputFormat.setOutputPath(job, new Path(args[1]));
+        System.exit(job.waitForCompletion(true) ? 0 : 1);
+    }
+}
+\end{lstlisting}
+
+\textbf{Result:} The Java program contains a Mapper, a Reducer, and a driver method to configure and submit the matrix multiplication job.
+
+\subsection{2. Compile the Program}
+The Java source file was compiled using the Hadoop classpath.
+
+\begin{lstlisting}[style=terminalstyle]
+javac -classpath $(hadoop classpath) -d . MatrixMultiplication.java
+\end{lstlisting}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{compile.png}
+\caption{Compiling the Java source and generating class files.}
+\end{figure}
+
+\textbf{Result:} Compilation completed successfully and generated the main class and the Mapper and Reducer class files.
+
+\subsection{3. Build the JAR File}
+The compiled classes were packaged into a JAR file.
+
+\begin{lstlisting}[style=terminalstyle]
+jar -cvf MatrixMultiplication.jar MatrixMultiplication*.class
+\end{lstlisting}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{jar.png}
+\caption{Creating MatrixMultiplication.jar from the compiled class files.}
+\end{figure}
+
+\textbf{Result:} The JAR file \texttt{MatrixMultiplication.jar} was created successfully.
+
+\subsection{4. Load Input Data into HDFS}
+An HDFS input directory was created and the matrix input file was uploaded.
+
+\begin{lstlisting}[style=terminalstyle]
+hdfs dfs -mkdir -p /user/cloudera/exp7_input
+hdfs dfs -put matrix_input.txt /user/cloudera/exp7_input
+hdfs dfs -ls /user/cloudera/exp7_input
+\end{lstlisting}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{hdfs.png}
+\caption{Creating the HDFS input directory and uploading matrix\_input.txt.}
+\end{figure}
+
+\textbf{Result:} The input file was successfully uploaded to \texttt{/user/cloudera/exp7\_input}.
+
+\subsection{5. Run the MapReduce Job}
+The job was submitted using the \texttt{hadoop jar} command with the HDFS input and output paths.
+
+\begin{lstlisting}[style=terminalstyle]
+hadoop jar MatrixMultiplication.jar MatrixMultiplication \
+  /user/cloudera/exp7_input \
+  /user/cloudera/exp7_output
+\end{lstlisting}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{run.png}
+\caption{MapReduce job execution log and framework counters.}
+\end{figure}
+
+\textbf{Result:} The job completed successfully. The counters report 8 map input records, 16 map output records, 16 reducer input records, and 4 reducer output records. One map task and one reduce task were launched.
+
+\subsection{6. View the Output}
+The output was read from the HDFS result file.
+
+\begin{lstlisting}[style=terminalstyle]
+hdfs dfs -cat /user/cloudera/exp7_output/part-r-00000
+\end{lstlisting}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\linewidth]{output.png}
+\caption{Final matrix multiplication output from HDFS.}
+\end{figure}
+
+The output values are:
+\[
+C=\begin{bmatrix}19&22\\43&50\end{bmatrix}.
+\]
+These values match the expected matrix product:
+\[
+C_{00}=1(5)+2(7)=19,\quad C_{01}=1(6)+2(8)=22,
+\]
+\[
+C_{10}=3(5)+4(7)=43,\quad C_{11}=3(6)+4(8)=50.
+\]
+
+\textbf{Result:} The output file contained all four computed cells of the product matrix.
+
+\section{Observation}
+\begin{center}
+\begin{tabular}{p{0.55\linewidth}p{0.36\linewidth}}
+\toprule
+\textbf{Operation} & \textbf{Status}\\
+\midrule
+Program compilation & Successful\\
+JAR file creation & Successful\\
+Input upload to HDFS & Successful\\
+MapReduce job execution & Successful -- job completed\\
+Map input / output records & 8 / 16\\
+Reduce input / output records & 16 / 4\\
+Output verification & Successful -- 4 matrix cells\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Conclusion}
+The experiment demonstrated matrix multiplication using a single Hadoop MapReduce job written in Java. The Mapper emitted intermediate values for each output cell, while the Reducer matched the common matrix index, multiplied corresponding elements, and summed the products. The program was compiled, packaged into a JAR file, and executed using input data stored in HDFS. The job completed successfully, and the output matched the expected product of the two input matrices.
+
+\textbf{Final result:} The MapReduce program correctly computed the product matrix
+$\begin{bmatrix}19&22\\43&50\end{bmatrix}$ from the given $2\times2$ matrices.
+
+\end{document}

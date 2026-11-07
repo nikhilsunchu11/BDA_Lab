@@ -1,0 +1,58 @@
+HBase Shell; enter 'help<RETURN>' for list of supported commands.
+Type "exit<RETURN>" to leave the HBase Shell
+Version 1.2.0-cdh5.7.0, rUnknown, Wed Mar 23 11:39:14 PDT 2016
+
+scan 'students'
+ROW  COLUMN+CELL
+ S101 column=info:department, timestamp=1791434390723, value=IT
+ S101 column=info:name, timestamp=1791434370386, value=Nikhil
+ S101 column=info:semester, timestamp=1791434403320, value=6
+ S101 column=marks:score, timestamp=1791434603277, value=85
+ S101 column=marks:subject, timestamp=1791434585212, value=Big Data
+ S102 column=info:department, timestamp=1791434620206, value=CSE
+ S102 column=info:name, timestamp=1791434611390, value=Priya
+ S102 column=info:semester, timestamp=1791434631189, value=6
+ S102 column=marks:score, timestamp=1791434649880, value=91
+ S102 column=marks:subject, timestamp=1791434642727, value=Big Data
+ S103 column=info:department, timestamp=1791434670445, value=IT
+ S103 column=info:name, timestamp=1791434659414, value=Amit
+ S103 column=info:semester, timestamp=1791434683855, value=6
+ S103 column=marks:score, timestamp=1791434699911, value=76
+ S103 column=marks:subject, timestamp=1791434692749, value=Big Data
+ S104 column=info:department, timestamp=1791434721519, value=CSE
+ S104 column=info:name, timestamp=1791434710014, value=Sneha
+ S104 column=info:semester, timestamp=1791434729152, value=6
+ S104 column=marks:score, timestamp=1791434741838, value=88
+ S104 column=marks:subject, timestamp=1791434735238, value=Big Data
+ S105 column=info:department, timestamp=1791434755792, value=AIDS
+ S105 column=info:name, timestamp=1791434750449, value=Rohan
+ S105 column=info:semester, timestamp=1791434761635, value=6
+ S105 column=marks:score, timestamp=1791434774880, value=79
+ S105 column=marks:subject, timestamp=1791434768793, value=Big Data
+ S106 column=info:department, timestamp=1791434788796, value=IT
+ S106 column=info:name, timestamp=1791434781526, value=Anjali
+ S106 column=info:semester, timestamp=1791434795500, value=6
+ S106 column=marks:score, timestamp=1791434812558, value=94
+ S106 column=marks:subject, timestamp=1791434805481, value=Big Data
+ S107 column=info:department, timestamp=1791434828873, value=CSE
+ S107 column=info:name, timestamp=1791434823289, value=Karan
+ S107 column=info:semester, timestamp=1791434835691, value=6
+ S107 column=marks:score, timestamp=1791434852585, value=72
+ S107 column=marks:subject, timestamp=1791434843146, value=Big Data
+ S108 column=info:department, timestamp=1791434884427, value=AIDS
+ S108 column=info:name, timestamp=1791434861434, value=Neha
+ S108 column=info:semester, timestamp=1791434893329, value=6
+ S108 column=marks:score, timestamp=1791434909602, value=86
+ S108 column=marks:subject, timestamp=1791434899523, value=Big Data
+ S109 column=info:department, timestamp=1791434922324, value=IT
+ S109 column=info:name, timestamp=1791434917090, value=Arjun
+ S109 column=info:semester, timestamp=1791434929409, value=6
+ S109 column=marks:score, timestamp=1791434941158, value=81
+ S109 column=marks:subject, timestamp=1791434935409, value=Big Data
+ S110 column=info:department, timestamp=1791434968544, value=CSE
+ S110 column=info:name, timestamp=1791434962196, value=Meera
+ S110 column=info:semester, timestamp=1791434975721, value=6
+ S110 column=marks:score, timestamp=1791434989452, value=89
+ S110 column=marks:subject, timestamp=1791434982931, value=Big Data
+10 row(s) in 0.1770 seconds
+

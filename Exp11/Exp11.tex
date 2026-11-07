@@ -1,0 +1,364 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=0.78in,headheight=14pt,footskip=24pt]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{xcolor,listings,graphicx,float,fancyhdr,caption,titlesec,microtype,array}
+\definecolor{codebg}{RGB}{247,247,247}
+\definecolor{codegreen}{RGB}{0,110,55}
+\definecolor{codeblue}{RGB}{30,70,160}
+\definecolor{codepurple}{RGB}{135,40,140}
+\lstdefinestyle{terminalstyle}{
+ basicstyle=\ttfamily\scriptsize, backgroundcolor=\color{codebg},
+ breaklines=true, frame=single, rulecolor=\color{black!18},
+ columns=fullflexible, keepspaces=true, showstringspaces=false
+}
+\lstdefinestyle{pythonstyle}{
+ language=Python, basicstyle=\ttfamily\scriptsize,
+ backgroundcolor=\color{codebg}, keywordstyle=\color{codeblue}\bfseries,
+ commentstyle=\color{codegreen}\itshape, stringstyle=\color{codepurple},
+ breaklines=true, frame=single, rulecolor=\color{black!18},
+ numbers=left, numberstyle=\tiny\color{gray}, numbersep=6pt,
+ columns=fullflexible, showstringspaces=false
+}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small Big Data Analysis Lab}
+\rfoot{\small Experiment 11}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\titleformat{\section}{\large\bfseries}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.7em}{}
+\captionsetup{font=small,labelfont=bf}
+\setlength{\intextsep}{5pt}
+\setlength{\textfloatsep}{6pt}
+\setlength{\abovecaptionskip}{3pt}
+\setlength{\belowcaptionskip}{0pt}
+\begin{document}
+\noindent
+\textbf{Name:} Nikhil Sunchu\\
+\textbf{Class:} D20A-31
+
+\vspace{0.5em}
+\begin{center}
+{\Large\bfseries Experiment 11: Clustering}\\
+\textbf{CURE Clustering using Python}
+\end{center}
+
+\section{Implementation Steps}
+
+\subsection{Install Required Libraries}
+A project directory was created and the required Python libraries were installed using \texttt{uv}. NumPy was used for numerical operations, Matplotlib for plotting, and SciPy for hierarchical clustering and dendrograms.
+
+\begin{lstlisting}[style=terminalstyle]
+mkdir -p Exp11
+cd Exp11
+uv init
+uv add numpy matplotlib scipy
+uv run python -c "import numpy, matplotlib, scipy; print('All libraries installed successfully')"
+\end{lstlisting}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\linewidth]{images/installation.png}
+\caption{Installation and verification of the required Python libraries.}
+\end{figure}
+
+\subsection{Generate the Coordinate Datasets}
+Since the original coordinate files were not supplied with the practical, synthetic coordinate data was generated. The sample dataset contains 15 representative points, while the full dataset contains 90 points arranged into three groups.
+
+\begin{lstlisting}[style=pythonstyle]
+import numpy as np
+
+np.random.seed(42)
+
+# Generate three clusters
+cluster1 = np.random.normal(loc=[2, 2], scale=0.7, size=(30, 2))
+cluster2 = np.random.normal(loc=[8, 8], scale=0.7, size=(30, 2))
+cluster3 = np.random.normal(loc=[2, 9], scale=0.7, size=(30, 2))
+
+# Combine all points
+full_data = np.vstack([cluster1, cluster2, cluster3])
+
+# Select five sample points from each cluster
+sample_data = np.vstack([
+    cluster1[[0, 5, 10, 15, 20]],
+    cluster2[[0, 5, 10, 15, 20]],
+    cluster3[[0, 5, 10, 15, 20]]
+])
+
+# Save coordinate files
+np.savetxt("full_data.txt", full_data, delimiter=",", fmt="%.4f")
+np.savetxt("sample_data.txt", sample_data, delimiter=",", fmt="%.4f")
+
+print("Datasets generated successfully.")
+print("Sample data points:", len(sample_data))
+print("Full data points:", len(full_data))
+\end{lstlisting}
+
+The generator was executed and both text files were checked.
+\begin{lstlisting}[style=terminalstyle]
+uv run python generate_data.py
+ls -lh *.txt
+wc -l sample_data.txt full_data.txt
+head sample_data.txt
+head full_data.txt
+\end{lstlisting}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.73\linewidth]{images/dataset_generation.png}
+\caption{Generation and verification of the sample and full coordinate datasets.}
+\end{figure}
+
+\subsection{Implement CURE Clustering}
+The program reads the sample points, merges the closest clusters until three clusters remain, selects representative points, shrinks them towards the cluster centroids, and assigns the full dataset points to the nearest representative point.
+
+\begin{lstlisting}[style=pythonstyle]
+from functools import cmp_to_key
+import matplotlib.pyplot as plt
+import numpy as np
+import sys
+import datetime
+
+# Compare coordinates
+def comparator(x, y):
+    if x[0] < y[0]:
+        return -1
+    if x[0] == y[0]:
+        if x[1] < y[1]:
+            return -1
+        if x[1] > y[1]:
+            return 1
+        return 0
+    return 1
+
+# Dataset paths and parameters
+samplefile = "sample_data.txt"
+fullfile = "full_data.txt"
+ratio = 0.2
+k = 3
+representative_count = 3
+start = datetime.datetime.now()
+
+# Read sample data and initialize clusters
+clusters = []
+with open(samplefile, "r") as file:
+    for line in file:
+        value = line.strip().split(",")
+        point = [float(value[0]), float(value[1])]
+        clusters.append([point, 1, [point]])
+
+print("Initial sample clusters:", len(clusters))
+
+# Merge closest clusters until k clusters remain
+while len(clusters) > k:
+    min_coordinate = None
+    min_distance = sys.maxsize
+
+    for i in range(len(clusters)):
+        cluster1 = clusters[i]
+        centroid1 = np.array(cluster1[0]) / cluster1[1]
+        for j in range(i + 1, len(clusters)):
+            cluster2 = clusters[j]
+            centroid2 = np.array(cluster2[0]) / cluster2[1]
+            distance = np.sum((centroid2 - centroid1) ** 2)
+            if distance < min_distance:
+                min_coordinate = [i, j]
+                min_distance = distance
+
+    i, j = min_coordinate
+    cor1 = clusters[i]
+    cor2 = clusters[j]
+    new_cluster = [
+        np.ndarray.tolist(np.array(cor1[0]) + np.array(cor2[0])),
+        cor1[1] + cor2[1],
+        cor1[2] + cor2[2]
+    ]
+    clusters.pop(j)
+    clusters.pop(i)
+    clusters.append(new_cluster)
+
+print("Clusters after merging:", len(clusters))
+
+# Select representative points and calculate centroids
+centroids = []
+representatives = []
+for cluster in clusters:
+    sortedcluster = sorted(cluster[2], key=cmp_to_key(comparator))
+    repre = [sortedcluster[0]]
+
+    while len(repre) < representative_count:
+        center = np.mean(np.array(repre), axis=0)
+        candidate = None
+        max_distance = -1
+        for coor in sortedcluster:
+            if coor not in repre:
+                distance = np.sum((center - np.array(coor)) ** 2)
+                if distance > max_distance:
+                    max_distance = distance
+                    candidate = coor
+        if candidate is None:
+            break
+        repre.append(candidate)
+
+    cluster_centroid = np.mean(np.array(cluster[2]), axis=0)
+    centroids.append(cluster_centroid)
+
+    # Shrink representatives towards the centroid
+    shrunk = []
+    for representative in repre:
+        point = np.array(representative) + ratio * (
+            cluster_centroid - np.array(representative)
+        )
+        shrunk.append(point)
+    representatives.append(shrunk)
+
+print("Representative points selected.")
+
+# Assign full dataset points to nearest representative
+final_clusters = [[] for _ in range(k)]
+with open(fullfile, "r") as file:
+    for line in file:
+        values = line.strip().split(",")
+        point = np.array([float(values[0]), float(values[1])])
+        min_distance = sys.maxsize
+        index_cluster = 0
+
+        for i, cluster in enumerate(representatives):
+            for representative in cluster:
+                distance = np.sum((np.array(representative) - point) ** 2)
+                if distance < min_distance:
+                    min_distance = distance
+                    index_cluster = i
+        final_clusters[index_cluster].append(point)
+
+print("\nFinal Cluster Results")
+for i, cluster in enumerate(final_clusters):
+    print(f"Cluster {i + 1}: {len(cluster)} points")
+\end{lstlisting}
+
+\subsection{Visualize the Clusters}
+The assigned points were plotted using Matplotlib. Each cluster is displayed in a different color, and its centroid is marked with an \texttt{X}.
+
+\begin{lstlisting}[style=pythonstyle]
+# Plot final clusters
+plt.figure(figsize=(10, 7))
+for i, cluster in enumerate(final_clusters):
+    points = np.array(cluster)
+    plt.scatter(points[:, 0], points[:, 1], label=f"Cluster {i + 1}")
+    plt.scatter(
+        centroids[i][0], centroids[i][1],
+        marker="X", s=150, edgecolors="black"
+    )
+
+plt.title("CURE Clustering Results")
+plt.xlabel("X Coordinate")
+plt.ylabel("Y Coordinate")
+plt.legend()
+plt.grid(True)
+plt.savefig("plots/clustering.png", dpi=150)
+plt.show()
+
+end = datetime.datetime.now()
+print("\nExecution Time:", end - start)
+\end{lstlisting}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\linewidth]{images/clustering.png}
+\caption{Scatter plot showing the three clusters and their centroids.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.66\linewidth]{images/clustering_terminal.png}
+\caption{Terminal output showing the final cluster point counts and execution time.}
+\end{figure}
+
+\subsection{Generate Hierarchical Dendrograms}
+SciPy's \texttt{linkage()} function with the single-linkage method was used to generate the overall dendrogram and a separate dendrogram for each final cluster.
+
+\begin{lstlisting}[style=pythonstyle]
+from scipy.cluster.hierarchy import dendrogram, linkage
+
+# Overall dendrogram
+full_data = np.loadtxt(fullfile, delimiter=",")
+linked = linkage(full_data, method="single")
+
+plt.figure(figsize=(12, 7))
+dendrogram(
+    linked,
+    orientation="top",
+    distance_sort="descending",
+    show_leaf_counts=True
+)
+plt.title("Hierarchical Clustering Dendrogram - Full Dataset")
+plt.xlabel("Data Points")
+plt.ylabel("Distance")
+plt.tight_layout()
+plt.savefig("plots/full_dendrogram.png", dpi=150)
+plt.show()
+
+# Individual cluster dendrograms
+for i in range(len(final_clusters)):
+    cluster_data = np.array(final_clusters[i])
+    linked = linkage(cluster_data, method="single")
+
+    plt.figure(figsize=(12, 7))
+    dendrogram(
+        linked,
+        orientation="top",
+        distance_sort="descending",
+        show_leaf_counts=True
+    )
+    plt.title(f"Dendrogram - Cluster {i + 1}")
+    plt.xlabel("Data Points")
+    plt.ylabel("Distance")
+    plt.tight_layout()
+    plt.savefig(f"plots/cluster_{i + 1}_dendrogram.png", dpi=150)
+    plt.show()
+
+print("\nAll dendrograms generated successfully.")
+\end{lstlisting}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.96\linewidth]{images/full_dendrogram.png}
+\caption{Hierarchical clustering dendrogram for the full dataset.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.96\linewidth]{images/cluster_1_dendrogram.png}
+\caption{Hierarchical clustering dendrogram for Cluster 1.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.96\linewidth]{images/cluster_2_dendrogram.png}
+\caption{Hierarchical clustering dendrogram for Cluster 2.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.96\linewidth]{images/cluster_3_dendrogram.png}
+\caption{Hierarchical clustering dendrogram for Cluster 3.}
+\end{figure}
+
+\subsection{Execute the Program and Check Generated Files}
+The program was executed and the generated plot files were listed.
+
+\begin{lstlisting}[style=terminalstyle]
+uv run python exp9.py
+ls -lh plots/
+\end{lstlisting}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.56\linewidth]{images/generated_files.png}
+\caption{Terminal output and generated clustering and dendrogram plot files.}
+\end{figure}
+
+\end{document}
