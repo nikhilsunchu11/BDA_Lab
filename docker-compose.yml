@@ -1,0 +1,28 @@
+services:
+  cloudera:
+    image: cloudera/quickstart:latest
+    container_name: cloudera_quickstart
+    hostname: quickstart.cloudera
+    privileged: true
+    tty: true
+    stdin_open: true
+    command: /usr/bin/docker-quickstart
+    ports:
+      # Cloudera Manager Web UI
+      - "7180:7180"
+      # Hue (Hadoop User Experience UI)
+      - "8888:8888"
+      # Default Web Server / Welcome Page
+      - "80:80"
+      # HDFS NameNode Web UI
+      - "50070:50070"
+      # YARN ResourceManager Web UI
+      - "8088:8088"
+    volumes:
+      # Optional: Persist your Hadoop data on your Arch host
+      - cloudera_data:/var/lib/hadoop-hdfs
+    restart: unless-stopped
+
+volumes:
+  cloudera_data:
+
