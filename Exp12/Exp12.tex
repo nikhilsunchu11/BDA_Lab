@@ -1,0 +1,171 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=0.78in,headheight=14pt,footskip=24pt]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{xcolor,listings,graphicx,float,fancyhdr,caption,titlesec,microtype}
+\definecolor{codebg}{RGB}{247,247,247}
+\definecolor{codegreen}{RGB}{0,110,55}
+\definecolor{codeblue}{RGB}{30,70,160}
+\definecolor{codepurple}{RGB}{135,40,140}
+\lstdefinestyle{terminalstyle}{basicstyle=\ttfamily\scriptsize,backgroundcolor=\color{codebg},breaklines=true,frame=single,rulecolor=\color{black!18},columns=fullflexible,keepspaces=true,showstringspaces=false}
+\lstdefinestyle{pythonstyle}{language=Python,basicstyle=\ttfamily\scriptsize,backgroundcolor=\color{codebg},keywordstyle=\color{codeblue}\bfseries,commentstyle=\color{codegreen}\itshape,stringstyle=\color{codepurple},breaklines=true,frame=single,rulecolor=\color{black!18},numbers=left,numberstyle=\tiny\color{gray},numbersep=6pt,columns=fullflexible,showstringspaces=false}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small Big Data Analysis Lab}
+\rfoot{\small Experiment 12}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\titleformat{\section}{\large\bfseries}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.7em}{}
+\captionsetup{font=small,labelfont=bf}
+\setlength{\intextsep}{5pt}
+\setlength{\textfloatsep}{6pt}
+\setlength{\abovecaptionskip}{3pt}
+\setlength{\belowcaptionskip}{0pt}
+\graphicspath{{images/}}
+\begin{document}
+\noindent
+\textbf{Name:} Nikhil Sunchu\\
+\textbf{Class:} D20A-31
+
+\vspace{0.5em}
+\begin{center}
+{\Large\bfseries Experiment 12: PageRank}\\
+\textbf{Implementation of PageRank using PySpark}
+\end{center}
+
+\section{Implementation Steps}
+
+\subsection{Install PySpark}
+Google Colab was used to implement the PageRank algorithm. PySpark was installed using pip. The installation was already available in the runtime and its requirement was verified.
+\begin{lstlisting}[style=terminalstyle]
+!pip install pyspark
+\end{lstlisting}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\linewidth]{install.png}
+\caption{PySpark installation and package verification in Google Colab.}
+\end{figure}
+
+\subsection{Create the Input Dataset}
+A text file named \texttt{pgdata.txt} was created with directed links between four web pages. Each line contains the source page followed by the destination page.
+\begin{lstlisting}[style=terminalstyle]
+page1 page3
+page2 page1
+page4 page1
+page3 page1
+page4 page2
+page3 page4
+\end{lstlisting}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.66\linewidth]{dataset.png}
+\caption{Input dataset containing the directed page links.}
+\end{figure}
+
+\subsection{Import Libraries and Initialize SparkContext}
+The required PySpark classes were imported and a SparkContext was initialized with the application name \texttt{pgrank}.
+\begin{lstlisting}[style=pythonstyle]
+from pyspark import SparkContext, SQLContext
+
+sc = SparkContext(appName="pgrank")
+
+print("SparkContext initialized successfully!")
+print("Application Name:", sc.appName)
+\end{lstlisting}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\linewidth]{spark_context.png}
+\caption{SparkContext initialization and application name.}
+\end{figure}
+
+\subsection{Upload the Dataset}
+The input file was uploaded to the Colab runtime using the file upload utility.
+\begin{lstlisting}[style=pythonstyle]
+from google.colab import files
+
+linkfile = files.upload()
+\end{lstlisting}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\linewidth]{upload.png}
+\caption{Uploading \texttt{pgdata.txt} to the Google Colab runtime.}
+\end{figure}
+
+\subsection{Read and Group the Page Links}
+The text file was read using Spark. Each line was split into a source and destination page, duplicate links were removed, and destination pages were grouped by their source page.
+\begin{lstlisting}[style=pythonstyle]
+links = (
+    sc.textFile("pgdata.txt")
+    .map(lambda line: line.split())
+    .map(lambda pages: (pages[0], pages[1]))
+    .distinct()
+    .groupByKey()
+    .persist()
+)
+
+print("Page links loaded successfully:")
+for page, neighbours in links.collect():
+    print(page, list(neighbours))
+\end{lstlisting}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\linewidth]{links.png}
+\caption{Grouped source pages and their outgoing links.}
+\end{figure}
+
+\subsection{Define the Contribution Function and Initialize Ranks}
+The contribution function distributes a page's rank equally among its outgoing neighbours. Initially, every page was assigned a rank of 1.0.
+\begin{lstlisting}[style=pythonstyle]
+def computeContribs(neighbours, rank):
+    for neighbour in neighbours:
+        yield (neighbour, rank / len(neighbours))
+
+ranks = links.map(lambda x: (x[0], 1.0))
+
+print("Initial PageRank values:")
+for pair in ranks.collect():
+    print(pair)
+\end{lstlisting}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\linewidth]{initial_ranks.png}
+\caption{Contribution function and initial PageRank values for the four pages.}
+\end{figure}
+
+\subsection{Execute the PageRank Iterations}
+The PageRank values were updated for ten iterations. The rank contributions from incoming links were added using \texttt{reduceByKey()}, and the damping factor of 0.85 was applied in each iteration.
+\begin{lstlisting}[style=pythonstyle]
+n = 10
+
+for x in range(n):
+    contribs = links.join(ranks).flatMap(
+        lambda pair: computeContribs(
+            pair[1][0], pair[1][1]
+        )
+    )
+
+    ranks = (
+        contribs
+        .reduceByKey(lambda v1, v2: v1 + v2)
+        .map(lambda pair: (pair[0], pair[1] * 0.85 + 0.15))
+    )
+
+    print("Iteration", x)
+    for pair in ranks.collect():
+        print(pair)
+\end{lstlisting}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.90\linewidth]{iterations_code.png}
+\caption{PageRank iteration code executed in Google Colab.}
+\end{figure}
+\begin{figure}[H]
+\centering
+\includegraphics[height=6.0in,keepaspectratio]{iterations_output.png}
+\caption{PageRank values printed for iterations 0 through 9.}
+\end{figure}
+
+\end{document}
